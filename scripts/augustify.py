@@ -13,6 +13,7 @@ import string
 import json
 import numpy as np
 from difflib import SequenceMatcher
+from Bio import SeqIO
 from inspect import currentframe, getframeinfo
 from itertools import compress
 import multiprocessing
@@ -21,7 +22,8 @@ import uuid
 import ast
 import glob
 
-
+# augustify.py -g genome.fasta.masked -p parameter_list.txt --species -t 2 -ch 
+# OR:  -с selected_coordinates.txt
 
 __author__ = "Katharina J. Hoff"
 __copyright__ = "Copyright 2022. All rights reserved."
@@ -68,10 +70,15 @@ parser.add_argument('-t', '--threads', required=False, type=int, default=1,
                     help='Number of threads for running augustus. The number ' +
                     'of threads should not be greater than the number of ' +
                     'species parameter sets.')
-parser.add_argument('-c', '--use_coordinates', required=False, type=str, #default='selected_coordinates.txt',
-                  help='This is the file with the selected coordinates for contigs. that Augustify will use for predictions.' +
-                  'Augustify currently takes the n nucleotides of a contig RANDOMLY to pick a parameter set.' +
-                  'Prediction is performed on the full set of sequence after picking.')
+parser.add_argument('-c', '--use_coordinates', required=False, type=str, #default='./selected_coordinates.txt',
+                    help='This is the file with the selected coordinates for contigs,' +
+                    ' that Augustify will use for predictions. Augustify currently ' +
+                    'takes the n nucleotides of a contig RANDOMLY to pick a parameter ' +
+                    'set.Prediction is performed on the full set of sequence after picking.')
+parser.add_argument('-ch', '--chopped_up', action='store_true',
+                    help='To run Augustify using artificial contigsh (set of contigs that was' +
+                         ' formed buy chopped_up_genome.py script).The default mode is --chopped_up=False')
+
 args = parser.parse_args()
 
 if ( (args.metagenomic_classification_outfile) and (args.species) ):
@@ -107,7 +114,69 @@ if args.use_coordinates:
             ' does not exists. Please specify different file correctly.')
         exit(1)
 
+if ( (args.use_coordinates) and (args.chopped_up) ):
+    print("Incompatible options selected: you must either specify " +
+          "--use_coordinates/-c OR --chopped_up/-ch. You cannot run " +
+          "augustify.py with both options!")
+    exit(1)
+
 ''' ******************* BEGIN FUNCTIONS *************************************'''
+def save_random_headers(random_headers_list, random_headers_file):
+    with open(random_headers_file, 'w') as fp:
+        rand_headers = sum(random_headers_list, [])
+        for item in rand_headers:
+            fp.write(item+'\n')
+
+def get_fasta_for_augustify(fasta_inp, random_headers, fasta_out):
+    with open(fasta_inp) as inp, open(fasta_out, 'w') as out:
+        with open(random_headers, 'a+') as h:
+            h.seek(0)
+            lines = h.read().splitlines()
+            for seq_record in SeqIO.parse(inp, "fasta"):
+                if seq_record.id in lines:
+                    SeqIO.write(seq_record, out, 'fasta')
+
+def select_headers_randomly(fasta_inp, random_headers_file, n):
+    source_names = []
+    idxs_list = []
+    last_index = int(subprocess.check_output(['grep', '-c', '>', fasta_inp]).decode(
+        'utf-8')) - 1  # save the index of the last sequence from input fasta file
+
+    with open(fasta_inp) as inp:
+        idxs = []
+        for index, seq_record in enumerate(SeqIO.parse(inp, "fasta")):
+            source_name = seq_record.id.split("_")[0]
+            idx = seq_record.id.split("_")[1]
+            if source_name not in source_names:
+                source_names.append(source_name)
+                if idxs:
+                    idxs_list.append(idxs)
+                    idxs = []
+                    idxs.append(idx)
+                else:
+                    idxs.append(idx)
+            else:
+                if int(index) == last_index:
+                    idxs.append(idx)
+                    idxs_list.append(idxs)
+                else:
+                    idxs.append(idx)
+
+        rand_headers = []
+        for i, name in zip(idxs_list, source_names):
+            if n > len(i):
+                n = len(i)
+                rand_idxs = i
+            else:
+                rand_idxs = random.sample(i, n)
+
+            rand_header = [name + '_' + s for s in rand_idxs]
+            rand_headers.append(rand_header)
+
+    save_random_headers(random_headers_list=rand_headers,
+                        random_headers_file=random_headers_file)
+    print("Save randomly selected sequences headers to file: ", 'random_headers.txt')
+
 
 def normalize_float(manti, expo):
     """ Function that normalizes a float consisting of mantisse and exponent
@@ -242,9 +311,10 @@ def work_augustus(cmd_ext_lst):
     sub = re.search(r"seq(.+?)\.", str(cmd2[0]))[0][:-1]
     seqlen = cmd_ext_lst[-1]
 
-    if seqlen <= segmlen:
+
+    if seqlen <= segmlen or args.chopped_up:
         cmd = cmd1 + cmd2
-        print("short sequence")
+        #print("short sequence")
         return subprocess.run(cmd, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, shell=False), sub, np.NaN
     else:
@@ -258,7 +328,7 @@ def work_augustus(cmd_ext_lst):
             curr_start = random.randint(0, seqlen - segmlen)
         start = curr_start
 
-        print("Randomly selected start coordinate for ", sub, "is: ", curr_start)
+        #print("Randomly selected start coordinate for ", sub, "is: ", curr_start)
 
         curr_end = segmlen + curr_start
         returncode = 1
@@ -306,8 +376,7 @@ def augustify_seq(hindex, header, seqs, tmp, params, id):
 
     if __name__ == '__main__':
 
-        if args.use_coordinates:
-
+        if args.use_coordinates or args.chopped_up:
             with multiprocessing.Pool(processes=args.threads) as pool:
                 results = pool.map(work_augustus, calls)
 
@@ -599,7 +668,18 @@ if args.threads > len(params):
 ### Open genome file, loop over single sequences
 seq_to_spec = {}
 try:
-    with open(args.genome, "r") as genome_handle:
+    if args.chopped_up:
+        random_headers = 'tmp_random_headers.txt'
+        output_fasta = 'random_sequences.fasta'
+
+        select_headers_randomly(args.genome, random_headers, n=3)
+        get_fasta_for_augustify(args.genome, random_headers, output_fasta)
+        print("Got small fasta file to run Augustify: ", output_fasta)
+        genome = output_fasta
+    else:
+        genome = args.genome
+
+    with open(genome, "r") as genome_handle:
         id = str(uuid.uuid4().hex)[:10]
 
         curr_seq = ""
@@ -622,10 +702,9 @@ try:
         else:
             logger.info('Wrong formatted genome fasta file ' + args.genome + ' !')
 
-        if not args.use_coordinates:
+        if not args.use_coordinates and not args.chopped_up:
             filename = f'selected_coordinates_{id}_*.txt'
             list_of_files = glob.glob(filename)
-
             with open("selected_coordinates.txt", "w") as fout:
                 results_dict = {}
                 for fileName in list_of_files:
@@ -634,9 +713,13 @@ try:
                         dict_i = ast.literal_eval(data)
                         results_dict = results_dict | dict_i
                 fout.write(json.dumps(results_dict))
-
             with multiprocessing.Pool(processes=args.threads) as pool:
                 list(pool.map(os.remove, glob.glob(filename)))
+
+        if args.chopped_up:
+            with multiprocessing.Pool(processes=args.threads) as pool:
+                list(pool.map(os.remove, glob.glob('random_sequences.fasta')))
+            print("Removed small fasta file to run Augustify: ", output_fasta)
 
 except IOError:
     frameinfo = getframeinfo(currentframe())
