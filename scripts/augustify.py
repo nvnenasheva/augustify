@@ -21,8 +21,10 @@ from datetime import datetime
 import uuid
 import ast
 import glob
+import pygustus
 
 # /home/natalia/PycharmProjects/pythonProject/augustify_modification/augustify_modif.py -g genome.fasta.masked -p parameter_list.txt --species -t 2 -segmlen_not_fixed # OR:  -с selected_coordinates.txt
+# /home/natalia/PycharmProjects/pythonProject/augustify_modification/augustify_modif.py -g genome.fasta.masked -p parameter_list.txt --species -t 4 --hints=miniprothint.gff
 
 __author__ = "Katharina J. Hoff"
 __copyright__ = "Copyright 2022. All rights reserved."
@@ -77,8 +79,22 @@ parser.add_argument('-c', '--use_coordinates', required=False, type=str, #defaul
 parser.add_argument('-no_segmlen', '--segmlen_not_fixed', action='store_true',
                     help='To run Augustify selecting subsequences from input sequences. The default mode is --segmlen_not_fixed=False' +
                     '=> run Augustify using the entire input sequence completely')
+parser.add_argument('--hints', '--hintsfile', required=False, type=str,
+                    help='When this option is used the prediction considering hints (extrinsic information) is turned on.' +
+                         'hintsfilename contains the hints in gff format. The hints file can be ommitted')
+parser.add_argument('--ex_cfg', '--extrinsicCfgFile', required=False, type=str,
+                    default='~/PycharmProjects/pythonProject/augustify_modification/cfg/galba.cfg',
+                    help='This parameter defines a custom extrinsic.cfg file. The default value for ex_cfg is the cfg file of GALBA (cfg/galba.cfg)')
 
 args = parser.parse_args()
+
+
+'''# Hint type from input hintsfile will be checked
+my @allowedHints = (
+    "intron",  "start",    "stop",
+    "ass",     "dss",     "exonpart", "exon",
+    "CDSpart", "UTRpart", "nonexonpart", "ep"
+);'''
 
 if ( (args.metagenomic_classification_outfile) and (args.species) ):
     print("Incompatible options selected: you must either specify " +
@@ -249,8 +265,12 @@ def work_augustus(cmd_ext_lst):
 
     segmlen = 15000  # These parameters need to be evaluated, later!
     stepwidth = 7500  # These parameters need to be evaluated, later!
+
     cmd1 = cmd_ext_lst[0:7]
-    cmd2 = cmd_ext_lst[7:9]
+    #print(cmd1)
+    cmd2 = cmd_ext_lst[7:9] #7:11
+    #print("-----")
+    #print(cmd2)
     sub = re.search(r"seq(.+?)\.", str(cmd2[0]))[0][:-1]
     seqlen = cmd_ext_lst[-1]
 
@@ -285,7 +305,7 @@ def work_augustus(cmd_ext_lst):
                 curr_end = curr_end + stepwidth
             else:
                 curr_end = seqlen
-        print("run work_augustus for long seq")
+        #print("run work_augustus for long seq")
         return result, sub, start
 
 def augustify_seq(hindex, header, seqs, tmp, params, id):
@@ -306,16 +326,20 @@ def augustify_seq(hindex, header, seqs, tmp, params, id):
 
     # construct augustus calls
     calls = []
+    
+    # print("Hints filename:", args.hints)
+    # print("Extrinsic cfg file:", args.ex_cfg)
+
     for species in params:
-        curr_call =  [augustus, '--AUGUSTUS_CONFIG_PATH=' + augustus_config_path, 
+        curr_call =  [augustus, '--AUGUSTUS_CONFIG_PATH=' + augustus_config_path,
                      '--species=' + species.rstrip(), '--genemodel=complete', 
-                     '--emiprobs=on',
-                     '--softmasking=0', tmp + "seq" + str(hindex) + ".fa",
+                     '--emiprobs=on', '--softmasking=0', tmp + "seq" + str(hindex) + ".fa",
                      '--outfile=' + tmp + "seq" + str(hindex) + "_" + species.rstrip() + ".gff",
-                     '--errfile=' + tmp + "seq" + str(hindex) + "_" + species.rstrip() + ".err", currlen]
+                     '--errfile=' + tmp + "seq" + str(hindex) + "_" + species.rstrip() + ".err",
+                      currlen]
         calls.append(curr_call)
 
-# execute processes in parallel
+    # execute processes in parallel
 
     if __name__ == '__main__':
 
@@ -334,14 +358,14 @@ def augustify_seq(hindex, header, seqs, tmp, params, id):
                     res.wait()
                     results_dict = {}
                     for result in res.get():
-                        print(f'Got result: {result}', flush=True)
+                        #print(f'Got result: {result}', flush=True)
                         results_dict[result[1]] = result[2]
-                    print(res)
-                    print("Get all_results list")
+                    #print(res)
+                    #print("Get all_results list")
                 file.write(json.dumps(results_dict))
             logger.info("Saved randomly selected coordinates for contigs to file.")
 
-    logger.info("Finished parallel execution!")
+    #logger.info("Finished parallel execution!")
 
     # parse results and find max prob for this sequence
     results = {}
@@ -427,16 +451,60 @@ def augustify_seq(hindex, header, seqs, tmp, params, id):
             logger.info('Error in file ' + frameinfo.filename + ' at line ' +
                         str(frameinfo.lineno) + ': ' + 'Could not open file ' +
                         args.metagenomic_classification_outfile + ' for writing!')
-            
+
+
     # run augustus with all gene models for the selected species
+
     if args.prediction_file and not(max_mant == 0):
-        curr_call = [augustus, '--AUGUSTUS_CONFIG_PATH=' + augustus_config_path,
-                     '--species=' + max_species,
-                     '--softmasking=1', tmp + 'seq' + str(hindex) + '.fa',
-                     '--outfile=' + tmp + 'seq' + str(hindex) + '_' + max_species + '_max.gff',
-                     '--errfile=' + tmp + 'seq' + str(hindex) + '_' + max_species + '_max.err']
-        aug_res = subprocess.run(curr_call, stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE, shell=False)
+        print(max_species)
+        print(os.environ['AUGUSTUS_BIN_PATH'])
+
+#         curr_call = [augustus, '--AUGUSTUS_CONFIG_PATH=' + augustus_config_path,
+#                      '--species=' + max_species,
+#                      '--softmasking=1', tmp + 'seq' + str(hindex) + '.fa',
+#                      '--outfile=' + tmp + 'seq' + str(hindex) + '_' + max_species + '_max.gff',
+#                      '--errfile=' + tmp + 'seq' + str(hindex) + '_' + max_species + '_max.err',
+#                      #'--hintsfile=' + args.hints,
+#                      '--extrinsicCfgFile=' + args.ex_cfg]
+#         aug_res = subprocess.run(curr_call, stdout=subprocess.PIPE,
+#                        stderr=subprocess.PIPE, shell=False)
+
+
+    # !!! The parameter --hintsfile  does not work even if it is not called with the help of pygustus.
+    # !!! Perhaps the problem is in the format of the miniprothint.gff file.
+
+    # !!! --jobs doesn't work too, so the defaul value currently is --jobs=1
+
+        if args.threads:
+            threads = args.threads
+        else:
+            threads = 1
+        if args.hints:
+            print(hints)
+            hints = os.path.abspath(args.hints)
+
+            pygustus.augustus.predict(tmp + 'seq' + str(hindex) + '.fa',
+                                      species=max_species,
+                                      extrinsicCfgFile=args.ex_cfg,
+                                      hintsfile=hints,
+                                      softmasking=True,
+                                      jobs=1,
+                                      outfile= tmp + 'seq' + str(hindex) + '_' + max_species + '_max.gff',
+                                      errfile= tmp + 'seq' + str(hindex) + '_' + max_species + '_max.err',
+                                      #partitionLargeSeqeunces=True, # !!!!!!!!
+                                      partitionHints=True, minSplitSize=0, chunksize=250000, overlap=50000)
+
+        pygustus.augustus.predict(tmp + 'seq' + str(hindex) + '.fa',
+                                  species=max_species,
+                                  extrinsicCfgFile=args.ex_cfg,
+                                  softmasking=True,
+                                  jobs=1,
+                                  outfile=tmp + 'seq' + str(hindex) + '_' + max_species + '_max.gff',
+                                  errfile=tmp + 'seq' + str(hindex) + '_' + max_species + '_max.err',
+                                  # partitionLargeSeqeunces=True, # !!!!!!!!
+                                  partitionHints=True, minSplitSize=0, chunksize=250000, overlap=50000)
+
+
         try:
             with open(tmp + "seq" + str(hindex) + "_" + max_species + "_max.gff", "r") as aug_handle:
                 try:
@@ -511,7 +579,9 @@ if args.prediction_file:
     if args.augustus_bin_path:
         join_aug_pred = check_tool_in_given_path(args.augustus_bin_path + "../scripts/", "join_aug_pred.pl")
     else:
-        join_aug_pred = find_tool("join_aug_pred.pl")
+        #join_aug_pred = find_tool("join_aug_pred.pl")
+        join_aug_pred = augustus + '../scripts/join_aug_pred.pl'
+        print(join_aug_pred)
 
 
 ### Find augustus_config_path ###
@@ -580,6 +650,7 @@ params = list(compress(params, must_delete))
 
 ### Check whether more than 1 set remains
 if len(params) < 2:
+    print("len params:", len(params))
     frameinfo = getframeinfo(currentframe())
     if len(params) == 0:
         logger.info('Error in file ' + frameinfo.filename + ' at line ' +
