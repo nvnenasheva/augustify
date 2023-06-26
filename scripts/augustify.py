@@ -326,7 +326,6 @@ def augustify_seq(hindex, header, seqs, tmp, params, id):
 
     # construct augustus calls
     calls = []
-    
     # print("Hints filename:", args.hints)
     # print("Extrinsic cfg file:", args.ex_cfg)
 
@@ -452,57 +451,43 @@ def augustify_seq(hindex, header, seqs, tmp, params, id):
                         str(frameinfo.lineno) + ': ' + 'Could not open file ' +
                         args.metagenomic_classification_outfile + ' for writing!')
 
-
     # run augustus with all gene models for the selected species
 
     if args.prediction_file and not(max_mant == 0):
-        print(max_species)
-        print(os.environ['AUGUSTUS_BIN_PATH'])
+        # curr_call = [augustus, '--AUGUSTUS_CONFIG_PATH=' + augustus_config_path,
+        #              '--species=' + max_species,
+        #              '--softmasking=1', tmp + 'seq' + str(hindex) + '.fa',
+        #              '--outfile=' + tmp + 'seq' + str(hindex) + '_' + max_species + '_max.gff',
+        #              '--errfile=' + tmp + 'seq' + str(hindex) + '_' + max_species + '_max.err',
+        #              '--hintsfile=' + args.hints,
+        #              '--extrinsicCfgFile=' + args.ex_cfg]
+        # aug_res = subprocess.run(curr_call, stdout=subprocess.PIPE,
+        #                 stderr=subprocess.PIPE, shell=False)
 
-#         curr_call = [augustus, '--AUGUSTUS_CONFIG_PATH=' + augustus_config_path,
-#                      '--species=' + max_species,
-#                      '--softmasking=1', tmp + 'seq' + str(hindex) + '.fa',
-#                      '--outfile=' + tmp + 'seq' + str(hindex) + '_' + max_species + '_max.gff',
-#                      '--errfile=' + tmp + 'seq' + str(hindex) + '_' + max_species + '_max.err',
-#                      #'--hintsfile=' + args.hints,
-#                      '--extrinsicCfgFile=' + args.ex_cfg]
-#         aug_res = subprocess.run(curr_call, stdout=subprocess.PIPE,
-#                        stderr=subprocess.PIPE, shell=False)
-
-
-    # !!! The parameter --hintsfile  does not work even if it is not called with the help of pygustus.
-    # !!! Perhaps the problem is in the format of the miniprothint.gff file.
-
-    # !!! --jobs doesn't work too, so the defaul value currently is --jobs=1
-
-        if args.threads:
-            threads = args.threads
-        else:
-            threads = 1
         if args.hints:
-            print(hints)
             hints = os.path.abspath(args.hints)
-
+            print("Run augustus WITH hints file...")
             pygustus.augustus.predict(tmp + 'seq' + str(hindex) + '.fa',
                                       species=max_species,
                                       extrinsicCfgFile=args.ex_cfg,
                                       hintsfile=hints,
                                       softmasking=True,
-                                      jobs=1,
+                                      jobs=args.threads,
                                       outfile= tmp + 'seq' + str(hindex) + '_' + max_species + '_max.gff',
                                       errfile= tmp + 'seq' + str(hindex) + '_' + max_species + '_max.err',
-                                      #partitionLargeSeqeunces=True, # !!!!!!!!
+                                      #partitionLargeSeqeunces=True,
                                       partitionHints=True, minSplitSize=0, chunksize=250000, overlap=50000)
-
-        pygustus.augustus.predict(tmp + 'seq' + str(hindex) + '.fa',
-                                  species=max_species,
-                                  extrinsicCfgFile=args.ex_cfg,
-                                  softmasking=True,
-                                  jobs=1,
-                                  outfile=tmp + 'seq' + str(hindex) + '_' + max_species + '_max.gff',
-                                  errfile=tmp + 'seq' + str(hindex) + '_' + max_species + '_max.err',
-                                  # partitionLargeSeqeunces=True, # !!!!!!!!
-                                  partitionHints=True, minSplitSize=0, chunksize=250000, overlap=50000)
+        else:
+            print("Run augustus WITHOUT hints file...")
+            pygustus.augustus.predict(tmp + 'seq' + str(hindex) + '.fa',
+                                      species=max_species,
+                                      extrinsicCfgFile=args.ex_cfg,
+                                      softmasking=True,
+                                      jobs=args.threads,
+                                      outfile= tmp + 'seq' + str(hindex) + '_' + max_species + '_max.gff',
+                                      errfile= tmp + 'seq' + str(hindex) + '_' + max_species + '_max.err',
+                                      #partitionLargeSeqeunces=True,
+                                      partitionHints=True, minSplitSize=0, chunksize=250000, overlap=50000)
 
 
         try:
