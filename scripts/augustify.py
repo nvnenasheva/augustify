@@ -23,6 +23,7 @@ import ast
 import glob
 import pygustus
 
+# Usage Examples
 # /home/natalia/PycharmProjects/pythonProject/augustify_modification/augustify_modif.py -g genome.fasta.masked -p parameter_list.txt --species -t 2 -segmlen_not_fixed # OR:  -с selected_coordinates.txt
 # /home/natalia/PycharmProjects/pythonProject/augustify_modification/augustify_modif.py -g genome.fasta.masked -p parameter_list.txt --species -t 4 --hints=miniprothint.gff
 
@@ -263,8 +264,8 @@ def work_augustus(cmd_ext_lst):
 
     #global seqs, starts
 
-    segmlen = 15000  # These parameters need to be evaluated, later!
-    stepwidth = 7500  # These parameters need to be evaluated, later!
+    segmlen = 12000  # These parameters need to be evaluated, later!
+    stepwidth = segmlen/2  # These parameters need to be evaluated, later!
 
     cmd1 = cmd_ext_lst[0:7]
     #print(cmd1)
@@ -277,7 +278,9 @@ def work_augustus(cmd_ext_lst):
 
     if seqlen <= segmlen or args.segmlen_not_fixed:
         cmd = cmd1 + cmd2
-        #print("short sequence")
+        #print("Short sequence ")
+        # or:
+        #print("The whole seq was used for prediction...")
         return subprocess.run(cmd, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, shell=False), sub, np.NaN
     else:
